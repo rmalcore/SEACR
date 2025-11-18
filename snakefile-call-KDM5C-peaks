@@ -1,0 +1,68 @@
+configfile: "SnakeMake_dir_CnT2/sample_dirs.yaml"
+
+
+RUN=config['seq_run']
+NAME=config['sample_name']
+GENOME_DIR=config['bwa_index']
+SEACR_DIR=config['seacr_sh']
+
+USE_RPGC = True		
+	#True = feed SEACR RPGC-normalized bedgraphs and use "non"
+	#False = feed SEACR raw bedgraphs and use "norm"
+MARK = "KDM5C"
+
+# file patterns used below - adjust if your filenames differ
+if USE_RPGC:
+	EXP_PATTERN = "data/bdg_norm/{{sample}}_{MARK}.RPGCnorm.bedgraph"
+	SEACR_MODE = "non"
+else:
+	EXP_PATTERN = "data/bdg/{{sample}}_{MARK}.bedgraph"
+	SEACR_MODE = "norm"
+
+# Collect samples matching pattern
+EXP_PATTERN_FORMATTED = EXP_PATTERN.format(MARK=MARK)
+(SAMPLES_histone,) = glob_wildcards(EXP_PATTERN_FORMATTED)
+
+print(f"SEACR will run in mode '{SEACR_MODE}' on {len(SAMPLES_histone)} {MARK} samples.")
+
+# ----Targets----
+rule all:
+	input:
+		expand("peaks/{sample}." + MARK + ".{mode}.bed",  sample=SAMPLES_histone, mode=["stringent", "relaxed"])
+		#expand("peaks/{sample}.{mode}.annotated.bed", sample=SAMPLES, mode=["stringent", "relaxed"])
+	  
+      
+rule seacr_per_sample:
+	input: 
+		exp=EXP_PATTERN_FORMATTED,
+		script=SEACR_DIR
+	output: 
+		"peaks/{sample}." + MARK + ".{mode}.bed"
+	params:
+		project_name= NAME,
+		prefix="peaks/{sample}." + MARK
+	resources: mem_mb=8000, time_min=30
+	shell:
+		# mode is either "stringent" or "relaxed" from wildcard
+		"""
+		# create a temporary directory
+		tmpdir=$(mktemp -d)
+
+		# ensure it is deleted when the script exits
+		trap "rm -rf $tmpdir" EXIT
+		
+		# get absolute paths for SEACR inputs
+		exp_file=$(realpath {input.exp})
+		script_file=$(realpath {input.script})
+
+		# define temp prefix inside temp directory
+		tmp_prefix="$tmpdir/{wildcards.sample}"		
+
+		# run SEACR inside the temp dir
+		# Use top 1% (0.01) since no control
+		bash $script_file $exp_file 0.01 {SEACR_MODE} {wildcards.mode} $tmp_prefix
+
+		# move the final outputs to the intended location
+		mv "${{tmp_prefix}}.{wildcards.mode}.bed" {output}
+		"""
+
