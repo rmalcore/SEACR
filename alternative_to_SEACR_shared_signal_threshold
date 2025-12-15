@@ -1,0 +1,48 @@
+# Find 99th percentile of signal for bedgraph: 
+	python3 - <<'PY'
+	import numpy as np
+	data = np.loadtxt("pooled_KDM5C_5CflYM.RPGCnorm.bedgraph", usecols=3)
+	for p in [95, 97.5, 99, 99.5, 99.9]:
+   	  print(f"{p}th percentile:", np.percentile(data, p))
+	PY
+
+# Manual script in bash to call peaks using a shared cutoff
+	SHARED=43.8403
+
+	# female peaks
+	awk -v t=$SHARED '$4>=t {print $1"\t"$2"\t"$3"\t"$4}' pooled_KDM5C_5CflflF.RPGCnorm.bedgraph \
+	  | bedtools sort -i - | bedtools merge -i - > pooled_KDM5C_5CflflF_RPGCnorm_peaks.raw.bed
+
+	# male peaks
+	awk -v t=$SHARED '$4>=t {print $1"\t"$2"\t"$3"\t"$4}' pooled_KDM5C_5CflYM.RPGCnorm.bedgraph \
+	  | bedtools sort -i - | bedtools merge -i - > pooled_KDM5C_5CflYM_RPGCnorm_peaks.raw.bed
+	
+	# Inspect counts
+	echo "female peak count:" $(wc -l < pooled_KDM5C_5CflflF_RPGCnorm_peaks.raw.bed)
+	echo "male peak count:" $(wc -l < pooled_KDM5C_5CflYM_RPGCnorm_peaks.raw.bed)
+
+
+# Find out range of peak lengths in sample
+awk '{
+  len = $3 - $2
+  sum += len
+  sumsq += len^2
+  n++
+  if (len < min || n == 1) min = len
+  if (len > max) max = len
+  if (len < 200) small++
+} 
+END {
+  mean = sum / n
+  std = sqrt(sumsq / n - mean^2)
+  printf "n=%d\nmean=%.1f bp\nstd=%.1f bp\nmin=%d bp\nmax=%d bp\n<200 bp=%d (%.1f%%)\n", \
+         n, mean, std, min, max, small, small/n*100
+}' pooled_KDM5C_5CflYM_RPGCnorm_peaks.raw.bed
+	
+
+# Post-filter to keep peaks only a minimum of 50 bp
+	awk '{ if($3-$2 >= 50) print }' pooled_KDM5C_5CflflF_RPGCnorm_peaks.raw.bed > pooled_KDM5C_5CflflF_RPGCnorm_peaks.min50.bed
+	awk '{ if($3-$2 >= 50) print }' pooled_KDM5C_5CflYM_RPGCnorm_peaks.raw.bed   > pooled_KDM5C_5CflYM_RPGCnorm_peaks.min50.bed
+
+	echo "female peaks >=50bp:" $(wc -l < pooled_KDM5C_5CflflF_RPGCnorm_peaks.min50.bed)
+	echo "male peaks >=50bp:" $(wc -l < pooled_KDM5C_5CflYM_RPGCnorm_peaks.min50.bed)
